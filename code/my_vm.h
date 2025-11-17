@@ -39,15 +39,20 @@
 //COMPLETE HERE
 
 // --- Constants for bit shifts and masks ---
-#define PDXSHIFT      /** TODO: number of bits to shift for directory index **/
-#define PTXSHIFT      /** TODO: number of bits to shift for table index **/
-#define PXMASK        /** TODO:  **/
-#define OFFMASK       /** TODO: **/
+#define OFFBITS       (__builtin_ctz((unsigned)PGSIZE))
+#define PTX_BITS      (((unsigned)VA_BITS - OFFBITS) / 2u)
+#define PDX_BITS      (((unsigned)VA_BITS - OFFBITS) - PTX_BITS)
+
+#define PTXSHIFT      (OFFBITS)                       /* bits to shift to get page-table index */
+#define PDXSHIFT      (PTXSHIFT + PTX_BITS)          /* bits to shift to get page-directory index */
+
+#define PXMASK        ((1u << PTX_BITS) - 1u)        /* mask for page-table index */
+#define OFFMASK       (PGSIZE - 1u)                  /* mask for offset within page */
 
 // --- Macros to extract address components ---
-#define PDX(va)       /** TODO: compute directory index from virtual address **/
-#define PTX(va)       /** TODO: compute table index from virtual address **/
-#define OFF(va)       /** TODO: compute page offset from virtual address **/
+#define PDX(va)       ((((vaddr32_t)(VA2U(va))) >> PDXSHIFT) & ((1u << PDX_BITS) - 1u))
+#define PTX(va)       ((((vaddr32_t)(VA2U(va))) >> PTXSHIFT) & PXMASK)
+#define OFF(va)       (((vaddr32_t)(VA2U(va))) & OFFMASK)
 
 // -----------------------------------------------------------------------------
 //  Type Definitions
@@ -63,6 +68,11 @@ typedef uint32_t pde_t;       // Page directory entry
 // -----------------------------------------------------------------------------
 
 #define PFN_SHIFT     /** TODO: number of bits to shift**/
+/* PFN_SHIFT: position of the physical frame number inside a PTE.
+ * Since PTE stores PFN at the top and offset is the low OFFBITS, we
+ * place PFN shifted by OFFBITS.
+ */
+#define PFN_SHIFT     (OFFBITS)
 
 // -----------------------------------------------------------------------------
 //  Address Conversion Helpers (Provided)
@@ -78,20 +88,15 @@ static inline void*     U2VA(vaddr32_t u)  { return (void*)(uintptr_t)u; }
 #define TLB_ENTRIES   512   // Default number of TLB entries
 
 struct tlb {
-    /*
-     * TODO: Define the TLB structure.
-     * Each entry typically includes:
-     *  - Virtual Page Number (VPN)
-     *  - Physical Frame Number (PFN)
-     *  - Valid bit
-     *  - Optional timestamp for replacement policy (e.g., LRU)
-     *
-     * Example:
-     *   uint32_t vpn;
-     *   uint32_t pfn;
-     *   bool valid;
-     *   uint64_t last_used;
-     */
+    /* Direct-mapped TLB storage. Each entry maps a VPN -> PFN. */
+    struct {
+        uint32_t vpn;   /* virtual page number */
+        uint32_t pfn;   /* physical frame number */
+        uint8_t  valid; /* valid bit (0 = invalid, 1 = valid) */
+    } entries[TLB_ENTRIES];
+    /* simple counters for statistics (optional) */
+    unsigned long long lookups;
+    unsigned long long misses;
 };
 
 extern struct tlb tlb_store;
